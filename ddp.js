@@ -1,5 +1,12 @@
 #!/usr/bin/env node
 
+// exit codes
+var SUCCESS = 0;
+var USAGE_ERROR = 1;
+var CONNECTION_ERROR = 2;
+var METHOD_ERROR = 3;
+var SUBSCRIPTION_ERROR = 4;
+
 var DDPClient = require('ddp');
 var util = require('util');
 var _ = require('underscore');
@@ -12,6 +19,12 @@ var Client = function (onConnect, opts) {
   DDPClient.prototype.constructor.call(this, opts);
   this.setup(onConnect);
 };
+
+var data = {};
+
+var debug = function() {
+  // console.log(arguments)
+}
 
 util.inherits(Client, DDPClient);
 
@@ -28,24 +41,30 @@ _.extend(Client.prototype, {
     this.connect(function (err) {
       if (err) {
         console.log('Connection error: ', err);
-        process.exit(1);
+        process.exit(CONNECTION_ERROR);
       }
 
       return onConnect.call(this);
     });
 
     this.on('message', function (msg) {
-      console.log('[msg]: ' + msg);
+      debug('[msg]: ' + msg);
+      
+      var msg = JSON.parse(msg);
+      if (msg.msg === 'added') {
+        data[msg.collection] = data[msg.collection] || {};
+        data[msg.collection][msg.id] = msg.fields;
+      }
     });
 
     this.on('socket-close', function (code, message) {
-      console.log('[socket closed]: ', code, message);
-      process.exit(1);
+      debug('[socket closed]: ', code, message);
+      process.exit(CONNECTION_ERROR);
     });
 
     this.on('socket-error', function (error) {
-      console.log('[socket error]: ', error && error.toString());
-      process.exit(1);
+      console.err('[socket error]: ', error && error.toString());
+      process.exit(CONNECTION_ERROR);
     });
 
     process.on('SIGINT', function () {
@@ -72,12 +91,13 @@ var commands = {
     usage: function () {
      console.error('Connect to a DDP server');
      console.error('Usage: ddp connect');
-     process.exit(1);
+     process.exit(USAGE_ERROR);
     },
 
     run: function (args, opts) {
       Client(function () {
         console.log('[connected]');
+        process.exit(SUCCESS);
       }, opts);
     }
   },
@@ -86,7 +106,7 @@ var commands = {
     usage: function () {
      console.error('Call a Meteor method');
      console.error('Usage: ddp call <method> [<param1> <param2> ...]');
-     process.exit(1);
+     process.exit(USAGE_ERROR);
     },
 
     run: function (args, opts) {
@@ -98,8 +118,16 @@ var commands = {
       Client(function () {
         var client = this;
         methodArgs = this.parseArgs(methodArgs);
-        console.log('[call]: ' + method + ' ' + JSON.stringify(methodArgs));
-        this.call(method, methodArgs, function (err, res) {});
+        debug('[call]: ' + method + ' ' + JSON.stringify(methodArgs));
+        this.call(method, methodArgs, function (err, res) {
+          if (err) {
+            console.log(JSON.stringify(err));
+            process.exit(METHOD_ERROR);
+          } else {
+            console.log(JSON.stringify(res));
+            process.exit(SUCCESS);
+          }
+        });
       }, opts);
     }
   },
@@ -108,7 +136,7 @@ var commands = {
     usage: function () {
      console.error('Subscribe to a Meteor Collection');
      console.error('Usage: ddp subscribe <subscription> [<param1> <param2> ...]');
-     process.exit(1);
+     process.exit(USAGE_ERROR);
     },
 
     run: function (args, opts) {
@@ -120,8 +148,17 @@ var commands = {
 
       Client(function () {
         subscriptionArgs = this.parseArgs(subscriptionArgs);
-        console.log('[subscribe]: ' + subscription + ' ' + JSON.stringify(subscriptionArgs));
-        this.subscribe(subscription, subscriptionArgs);
+        debug('[subscribe]: ' + subscription + ' ' + JSON.stringify(subscriptionArgs));
+        this.subscribe(subscription, subscriptionArgs, function(err) {
+          if (err) {
+            console.log(JSON.stringify(err));
+            process.exit(SUBSCRIPTION_ERROR);
+          } else {
+            // dump all data
+            console.log(JSON.stringify(data));
+            process.exit(SUCCESS);
+          }
+        });
       }, opts);
     }
   },
@@ -130,7 +167,7 @@ var commands = {
     usage: function () {
      console.error('Subscribe to multiple Meteor Collections');
      console.error('Usage: ddp subscribe-multi <subscription> [<subscription2> <subscription3> ...]');
-     process.exit(1);
+     process.exit(USAGE_ERROR);
     },
 
     run: function (args, opts) {
@@ -139,9 +176,23 @@ var commands = {
       if (!subscriptions.length) return this.usage();
 
       Client(function () {
+        var complete = 0;
         for (var i = 0; i < subscriptions.length; i++) {
-          console.log('[subscribe]: ' + subscriptions[i]);
-          this.subscribe(subscriptions[i], []);
+          debug('[subscribe]: ' + subscriptions[i]);
+          this.subscribe(subscriptions[i], [], function(err) {
+            if (err) {
+              console.log(JSON.stringify(err));
+              process.exit(SUBSCRIPTION_ERROR);
+            } else {
+              complete += 1;
+              if (complete === subscriptions.length) {
+                // dump all data
+                console.log(JSON.stringify(data));
+                process.exit(SUCCESS);
+              }
+            }
+            
+          });
         }
       });
     }
@@ -174,7 +225,7 @@ var usage = function () {
   console.error('\tsubscribe\t\tSubscribe to a collection with parameters');
   console.error('\tsubscribe-multi\t\tSubscribe to multiple collections');
   console.error('\tcall\t\t\tCall a method');
-  process.exit(1);
+  process.exit(SUCCESS);
 }
 
 if (!commandName) 
@@ -188,5 +239,5 @@ try {
 } catch (e) {
   console.error('Error running command: ' + e.toString());
   this.usage();
-  system.exit(1);
+  system.exit(SUCCESS);
 }
