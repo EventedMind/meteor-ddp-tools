@@ -63,7 +63,7 @@ _.extend(Client.prototype, {
     });
 
     this.on('socket-error', function (error) {
-      console.err('[socket error]: ', error && error.toString());
+      console.error('[socket error]: ', error && error.toString());
       process.exit(CONNECTION_ERROR);
     });
 
