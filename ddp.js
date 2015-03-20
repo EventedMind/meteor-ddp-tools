@@ -54,7 +54,7 @@ _.extend(Client.prototype, {
   },
 
   parseArgs: function (args) {
-    var client = this
+    var client = this;
     args = args.map(function (arg) {
       try {
         return JSON.parse(arg);
@@ -99,7 +99,12 @@ var commands = {
         var client = this;
         methodArgs = this.parseArgs(methodArgs);
         console.log('[call]: ' + method + ' ' + JSON.stringify(methodArgs));
-        this.call(method, methodArgs, function (err, res) {});
+        this.call(method, methodArgs, function (err, res) {
+
+          if (opts.exit_on_results) {
+            process.exit(err ? 1 : 0);
+          }
+        });
       }, opts);
     }
   },
@@ -154,9 +159,10 @@ var argv = require('optimist')
     port: 3000,
     path: 'websocket',
     auto_reconnect: false,
+    exit_on_results: false,
     use_ssl: false,
     auto_reconnect_timer: 500
-  }).argv
+  }).argv;
 
 var args = argv._;
 var commandName = args[0];
@@ -168,16 +174,16 @@ args = args.slice(1);
 
 var usage = function () {
   console.error('Command line tools for DDP.\n');
-  console.error('Usage: ddp [--host] [--port] [--path] [--auto_reconnect] [--use_ssl] [--auto_reconnect_timer] <command> [<args>]\n');
+  console.error('Usage: ddp [--host] [--port] [--path] [--auto_reconnect] [--use_ssl] [--auto_reconnect_timer] [--exit_on_results] <command> [<args>]\n');
   console.error('Available commands are:');
   console.error('\tconnect\t\t\tConnect to a DDP server');
   console.error('\tsubscribe\t\tSubscribe to a collection with parameters');
   console.error('\tsubscribe-multi\t\tSubscribe to multiple collections');
   console.error('\tcall\t\t\tCall a method');
   process.exit(1);
-}
+};
 
-if (!commandName) 
+if (!commandName)
   return usage();
 
 if (!(command = commands[commandName]))
